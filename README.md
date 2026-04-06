@@ -195,7 +195,7 @@ npm start
 
 ### backend/.env
 ```env
-MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/
+MONGO_URI=from drivers connections
 DB_NAME=fraudwatch
 JWT_SECRET=replace-with-a-long-random-string
 FRONTEND_URL=*
