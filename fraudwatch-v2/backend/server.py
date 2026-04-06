@@ -283,7 +283,10 @@ def train_model(dataset_id: str, user=Depends(get_current_user)):
         )
     has_labels = fraud_col != "none" and fraud_col in df.columns
 
-    X = df.drop(columns=[fraud_col] if has_labels else [])
+    # Always drop ALL known fraud label columns to prevent data leakage
+    label_cols = ["is_fraud", "isFraud", "fraud", "Class", "label", "Fraud", "TARGET", "target"]
+    cols_to_drop = [c for c in label_cols if c in df.columns]
+    X = df.drop(columns=cols_to_drop)
     encoders = {}
     for col in X.select_dtypes(include="object").columns:
         le = LabelEncoder()
@@ -392,9 +395,21 @@ def get_transactions(
     status: Optional[str] = None,
     page: int = 1,
     per_page: int = 500,
+    dataset_id: Optional[str] = None,
     user=Depends(get_current_user)
 ):
+    # If no dataset_id given, use the latest dataset for this user
+    if not dataset_id:
+        latest = datasets_col.find_one(
+            {"uploaded_by": user["email"]},
+            {"id": 1},
+            sort=[("uploaded_at", -1)]
+        )
+        dataset_id = latest["id"] if latest else None
+
     q = {}
+    if dataset_id:
+        q["dataset_id"] = dataset_id
     if status and status != "All":
         q["_status"] = status
     total = transactions_col.count_documents(q)
@@ -404,12 +419,16 @@ def get_transactions(
 
 @router.get("/analytics/summary")
 def analytics_summary(user=Depends(get_current_user)):
-    total      = transactions_col.count_documents({})
-    fraudulent = transactions_col.count_documents({"_status": "Fraudulent"})
-    suspicious = transactions_col.count_documents({"_status": "Suspicious"})
+    latest = datasets_col.find_one(
+        {"uploaded_by": user["email"]}, {"id": 1}, sort=[("uploaded_at", -1)]
+    )
+    base_q = {"dataset_id": latest["id"]} if latest else {}
+    total      = transactions_col.count_documents(base_q)
+    fraudulent = transactions_col.count_documents({**base_q, "_status": "Fraudulent"})
+    suspicious = transactions_col.count_documents({**base_q, "_status": "Suspicious"})
     fraud_amts = [
         t.get("_amount_inr", 0) or 0
-        for t in transactions_col.find({"_status": "Fraudulent"}, {"_amount_inr": 1, "_id": 0})
+        for t in transactions_col.find({**base_q, "_status": "Fraudulent"}, {"_amount_inr": 1, "_id": 0})
     ]
     total_inr = sum(fraud_amts)
     return {
