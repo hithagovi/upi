@@ -10,7 +10,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
-import os, io, uuid, logging
+import os, io, uuid, logging, math
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -76,6 +76,40 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)):
         return user
     except JWTError:
         raise HTTPException(401, "Invalid or expired token")
+
+
+def bson_safe(value):
+    if value is None:
+        return None
+
+    if isinstance(value, np.generic):
+        value = value.item()
+
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.to_pydatetime()
+
+    if isinstance(value, np.datetime64):
+        if np.isnat(value):
+            return None
+        return pd.to_datetime(value).to_pydatetime()
+
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return float(value)
+
+    if isinstance(value, (list, tuple)):
+        return [bson_safe(v) for v in value]
+
+    if isinstance(value, dict):
+        return {str(k): bson_safe(v) for k, v in value.items()}
+
+    if isinstance(value, (str, int, bool, datetime)):
+        return value
+
+    return str(value)
 
 # ── Fraud heuristics ──────────────────────────────────────────────────────────
 AMT_COLS  = ["amount", "Amount", "AMOUNT", "Amount (INR)", "Amount ", "transaction_amount"]
@@ -263,9 +297,9 @@ def train_model(dataset_id: str, user=Depends(get_current_user)):
     results = []
     for i, row in enumerate(df.to_dict("records")):
         det = detect_fraud_row(row, stats)
-        r = {k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in row.items()}
+        r = {str(k): bson_safe(v) for k, v in row.items()}
         r.update({
-            "_id": i,
+            "row_id": i,
             "_score": det["score"],
             "_status": det["status"],
             "_flags": det["flags"],
@@ -325,14 +359,19 @@ def train_model(dataset_id: str, user=Depends(get_current_user)):
             logger.warning(f"XGBoost failed, keeping heuristics: {e}", exc_info=True)
 
     # ── Save to MongoDB ───────────────────────────────────────────────────────
-    transactions_col.delete_many({"dataset_id": dataset_id})
-    if results:
-        transactions_col.insert_many(results[:10000])
+    try:
+        transactions_col.delete_many({"dataset_id": dataset_id})
+        if results:
+            transactions_col.insert_many(results[:10000])
 
-    datasets_col.update_one(
-        {"id": dataset_id},
-        {"$set": {"status": "trained", "row_count": len(results), "metrics": metrics}}
-    )
+        datasets_col.update_one(
+            {"id": dataset_id},
+            {"$set": {"status": "trained", "row_count": len(results), "metrics": metrics}}
+        )
+    except Exception as e:
+        logger.error(f"Training persistence failed: {e}", exc_info=True)
+        datasets_col.update_one({"id": dataset_id}, {"$set": {"status": "error"}})
+        raise HTTPException(500, f"Training save failed: {str(e)}")
 
     fc = sum(1 for r in results if r["_status"] == "Fraudulent")
     sc = sum(1 for r in results if r["_status"] == "Suspicious")

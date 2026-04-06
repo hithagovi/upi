@@ -259,21 +259,31 @@ function LoginPage({ onLogin }) {
         </div>
         <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>{mode === "login" ? "Sign In" : "Create Account"}</h2>
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", padding: "10px 14px", borderRadius: 8, marginBottom: 16, fontSize: 14 }}>{error}</div>}
-        {[["Email", email, setEmail, "text"], ["Password", password, setPassword, "password"]].map(([lbl, val, set, type]) => (
-          <div key={lbl} style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{lbl}</label>
-            <input type={type} value={val} onChange={e => set(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()}
-              style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, boxSizing: "border-box", outline: "none" }} />
-          </div>
-        ))}
-        <button onClick={submit} disabled={loading}
-          style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 8, fontWeight: 600, fontSize: 15, cursor: "pointer", marginTop: 8, opacity: loading ? 0.7 : 1 }}>
-          {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Register"}
-        </button>
-        <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
-          style={{ width: "100%", padding: 10, background: "transparent", color: "#667eea", border: "1px solid #667eea40", borderRadius: 8, fontWeight: 500, fontSize: 14, cursor: "pointer", marginTop: 10 }}>
-          {mode === "login" ? "Create new account" : "Back to Sign In"}
-        </button>
+        <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
+          {[
+            ["Email", email, setEmail, "email", "email"],
+            ["Password", password, setPassword, "password", mode === "login" ? "current-password" : "new-password"],
+          ].map(([lbl, val, set, type, autoComplete]) => (
+            <div key={lbl} style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{lbl}</label>
+              <input
+                type={type}
+                value={val}
+                autoComplete={autoComplete}
+                onChange={e => set(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, boxSizing: "border-box", outline: "none" }}
+              />
+            </div>
+          ))}
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#667eea,#764ba2)", color: "#fff", border: "none", borderRadius: 8, fontWeight: 600, fontSize: 15, cursor: "pointer", marginTop: 8, opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Register"}
+          </button>
+          <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
+            style={{ width: "100%", padding: 10, background: "transparent", color: "#667eea", border: "1px solid #667eea40", borderRadius: 8, fontWeight: 500, fontSize: 14, cursor: "pointer", marginTop: 10 }}>
+            {mode === "login" ? "Create new account" : "Back to Sign In"}
+          </button>
+        </form>
         <p style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: "#94a3b8" }}>Default: admin@fraudwatch.in / admin123</p>
       </div>
     </div>
@@ -325,7 +335,7 @@ function Layout({ user, page, setPage, onLogout, children }) {
 // ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
-function Dashboard({ transactions, onUpload, heuristicPct, datasetInfo, modelMetrics, mlStatus }) {
+function Dashboard({ transactions, onUpload, heuristicPct, datasetInfo, modelMetrics, mlStatus, blockedCount }) {
   const fileRef   = useRef();
   const fraud     = transactions.filter(t => t.__status === "Fraudulent");
   const suspicious= transactions.filter(t => t.__status === "Suspicious");
@@ -359,7 +369,7 @@ function Dashboard({ transactions, onUpload, heuristicPct, datasetInfo, modelMet
           onDragOver={e => e.preventDefault()}
           style={{ border: "2px dashed #e2e8f0", borderRadius: 10, padding: 32, textAlign: "center", cursor: "pointer", marginBottom: 16 }}>
           <div style={{ fontSize: 28, color: "#94a3b8", marginBottom: 8 }}>↑</div>
-          <div style={{ color: "#475569", fontWeight: 500 }}>Drag & drop a CSV file, or click to select</div>
+          <div style={{ color: "#475569", fontWeight: 500 }}>Drag & drop a CSV file with is_fraud column, or click to select</div>
           <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 4 }}>Any size · Any CSV with transaction data</div>
           <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: "none" }}
             onChange={e => { if (e.target.files[0]) { onUpload(e.target.files[0]); e.target.value = ""; } }} />
@@ -405,7 +415,7 @@ function Dashboard({ transactions, onUpload, heuristicPct, datasetInfo, modelMet
         <MetricCard icon={Icons.transactions} label="Total Transactions" value={transactions.length.toLocaleString()} color="#3b82f6" />
         <MetricCard icon={Icons.alert}        label="Fraudulent"         value={fraud.length.toLocaleString()}         color="#ef4444" sub={formatINR(fraudAmt)} />
         <MetricCard icon={Icons.alert}        label="Suspicious"         value={suspicious.length.toLocaleString()}    color="#f59e0b" />
-        <MetricCard icon={Icons.block}        label="Blocked Entities"   value={transactions.__blockedCount || 0}       color="#8b5cf6" />
+        <MetricCard icon={Icons.block}        label="Blocked Entities"   value={blockedCount || 0}                      color="#8b5cf6" />
         <MetricCard icon={Icons.percent}      label="Fraud Rate"         value={`${rate}%`}                            color="#10b981" />
       </div>
 
@@ -720,13 +730,15 @@ export default function App() {
   const [mlStatus, setMlStatus]         = useState("idle");
   const [heuristicPct, setHeuristicPct] = useState(0);
   const [toast, setToast]               = useState(null);
+  const [blockedCount, setBlockedCount] = useState(0);
   const rawRowsRef                      = useRef([]);
 
   // Restore session
   useEffect(() => {
     try {
+      const token = localStorage.getItem("fw_jwt");
       const u = localStorage.getItem("fw_user");
-      if (u) setUser(JSON.parse(u));
+      if (u && token) setUser(JSON.parse(u));
     } catch {}
     try {
       const info = localStorage.getItem("fw_dataset_info");
@@ -736,9 +748,14 @@ export default function App() {
       if (txns) setTransactions(JSON.parse(txns));
       if (mtx)  setModelMetrics(JSON.parse(mtx));
     } catch {}
-    // Load blocked count from backend
-    apiFetch("/blocks").then(d => setBlockedCount(Array.isArray(d) ? d.length : 0)).catch(() => {});
   }, []);
+
+  // Load blocked count (only when logged in and token exists)
+  useEffect(() => {
+    const token = localStorage.getItem("fw_jwt");
+    if (!user || !token) { setBlockedCount(0); return; }
+    apiFetch("/blocks").then(d => setBlockedCount(Array.isArray(d) ? d.length : 0)).catch(() => setBlockedCount(0));
+  }, [user]);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -784,7 +801,7 @@ export default function App() {
     };
     reader.onerror = () => showToast("Failed to read file", "error");
     reader.readAsText(file);
-  }, [runHeuristics, uploadToBackend]);
+  }, []);
 
   // ── Heuristic scan (instant, browser-side) ──
   const runHeuristics = (rows) => {
@@ -884,6 +901,7 @@ export default function App() {
     setTransactions([]);
     setDatasetInfo(null);
     setModelMetrics(null);
+    setBlockedCount(0);
     rawRowsRef.current = [];
   };
 
@@ -897,7 +915,7 @@ export default function App() {
       <style>{`* { box-sizing:border-box; margin:0; padding:0; } button { font-family:inherit; }`}</style>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       <Layout user={user} page={page} setPage={setPage} onLogout={handleLogout}>
-        {page === "dashboard"    && <Dashboard transactions={txnsWithMeta} onUpload={handleUpload} heuristicPct={heuristicPct} datasetInfo={datasetInfo} modelMetrics={modelMetrics} mlStatus={mlStatus} />}
+        {page === "dashboard"    && <Dashboard transactions={txnsWithMeta} onUpload={handleUpload} heuristicPct={heuristicPct} datasetInfo={datasetInfo} modelMetrics={modelMetrics} mlStatus={mlStatus} blockedCount={blockedCount} />}
         {page === "transactions" && <Transactions transactions={txnsWithMeta} />}
         {page === "analytics"   && <Analytics transactions={txnsWithMeta} modelMetrics={modelMetrics} />}
         {page === "blocks"      && <BlockManagement transactions={txnsWithMeta} />}
