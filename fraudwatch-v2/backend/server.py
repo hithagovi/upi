@@ -6,6 +6,7 @@ Production:  gunicorn server:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.
 """
 
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Form
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -174,9 +175,22 @@ def detect_fraud_row(row, stats):
 app = FastAPI(title="FraudWatch API", version="2.0.0")
 router = APIRouter(prefix="/api")
 
+# ── CORS — must be before route handling and before routers are included
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
+
 @app.get("/")
 def root():
     return {"status": "FraudWatch API running", "version": "2.0.0"}
+
+@app.options("/{path_name:path}")
+async def preflight(path_name: str):
+    return JSONResponse({})
 
 @app.get("/health")
 def health():
@@ -458,16 +472,6 @@ def add_block(body: dict, user=Depends(get_current_user)):
 def remove_block(entity: str, user=Depends(get_current_user)):
     blocks_col.delete_one({"entity": entity})
     return {"blocked": [b["entity"] for b in blocks_col.find({}, {"_id": 0})]}
-
-# ── CORS — must be before include_router ──────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_origin_regex=".*",
-    allow_methods=["*"],
-    allow_headers=["*"],
-    allow_credentials=False,
-)
 
 # ── Mount ─────────────────────────────────────────────────────────────────────
 app.include_router(router)
