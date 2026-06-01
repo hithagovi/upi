@@ -7,7 +7,8 @@ import {
 // ─────────────────────────────────────────────
 // API HELPER — all calls go through proxy to backend
 // ─────────────────────────────────────────────
-const API = process.env.REACT_APP_BACKEND_URL + "/api";
+const baseUrl = (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000").trim().replace(/\/+$/, "");
+const API = `${baseUrl}/api`;
 
 async function apiFetch(path, options = {}) {
   const token = localStorage.getItem("fw_jwt");
